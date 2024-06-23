@@ -1,0 +1,122 @@
+import pandas as pd # Für die Datenmanipulation
+import numpy as np # Für numerische Operationen
+from sklearn.preprocessing import OneHotEncoder # Datenvorverarbeitung, für One-Hot-Codierung
+from sklearn.ensemble import GradientBoostingClassifier # Für das Klassifikationsmodell
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score # Für Leistungsmetriken
+import matplotlib.pyplot as plt # Für die grafische Darstellung
+from sklearn.model_selection import train_test_split,GridSearchCV  # Zum Aufteilen des Datensatzes in Trainings- und Testsätze
+from sklearn.model_selection import StratifiedKFold, cross_val_score # Für Kreuzvalidierungsoperationen
+from sklearn.metrics import roc_curve, auc # Für ROC-Kurve und AUC
+from sklearn.model_selection import learning_curve # Für die Lernkurve
+import seaborn as sns # Für die Datenvisualisierung
+
+# Lesen der Daten aus einer Excel-Datei
+File_location = "C:/Users/waiki/OneDrive/Desktop/New folder/DATA.xlsx"
+data = pd.read_excel(File_location)
+
+# Überprüfung der Struktur und der Datentypen der Daten
+# print(data.info())
+
+# Definition der unabhängigen (X) und abhängigen (y) Variablen
+x_independent = data.drop('Störung', axis=1)  # Alle Spalten außer der 'Störung'-Spalte
+y_dependent = data['Störung']  # Zielvariable 'Störung'
+
+# One-Hot-Encoding für kategoriale Variablen
+onehe = OneHotEncoder(sparse=False)  # sparse=False stellt sicher, dass ein Numpy-Array zurückgegeben wird
+x_last = onehe.fit_transform(x_independent)  # Umwandlung der kategorialen Werte
+
+# Aufteilen der Daten in Trainings- und Test-Sets
+# test_size=0.2 bedeutet, dass 20% der Daten als Test-Set verwendet werden
+# random_state=42 wird verwendet, um die Zufälligkeit zu kontrollieren, 42 ist eine beliebte Wahl
+# stratify=y_dependent um das Verhältnis der Klassen beizubehalten
+X_train, X_test, y_train, y_test = train_test_split(x_last, y_dependent, test_size=0.2, random_state=42, stratify=y_dependent)
+
+# Erstellen des Gradient Boosting Klassifikationsmodells
+model = GradientBoostingClassifier(random_state=42)
+
+model.fit(X_train, y_train)  # Training des Modells mit den Trainingsdaten
+
+# Kreuzvalidierung
+skf = StratifiedKFold(n_splits=10)  # 10-fache stratifizierte K-Fold-Kreuzvalidierung
+score = cross_val_score(model, x_last, y_dependent, cv=skf.split(x_last, y_dependent))
+print(f"Kreuzvalidierungs-Score: {score}")
+
+# Vorhersage mit den Testdaten
+y_prognose = model.predict(X_test)
+
+# Berechnung der Fehlerkennzahlen
+# Genauigkeit: Verhältnis der korrekten Vorhersagen zu den gesamten Vorhersagen
+accuracy = accuracy_score(y_test, y_prognose)
+
+# Präzision: Wie viele der als positiv vorhergesagten Beispiele tatsächlich positiv sind
+precision = precision_score(y_test, y_prognose)
+
+# Rückruf: Wie viele der tatsächlich positiven Beispiele korrekt als positiv vorhergesagt wurden
+recall = recall_score(y_test, y_prognose)
+
+# F1-Score: Wird verwendet, um ein Gleichgewicht zwischen Präzision und Recall zu erreichen
+f1 = f1_score(y_test, y_prognose)
+
+# Leistungsmetriken auf dem Bildschirm ausgeben
+print(f"\nGenauigkeit: {accuracy}")
+print(f"Präzision: {precision}")
+print(f"Rückruf: {recall}")
+print(f"F1-Score: {f1}")
+print("\nKonfusionsmatrix: ", "\n", confusion_matrix(y_test, y_prognose))
+
+# Zeichnen der ROC-Kurve (Receiver Operating Characteristic)
+# Empfindlichkeit im Verhältnis zu falschen Positiven (True positive / False positive)
+fpr, tpr, thresholds = roc_curve(y_test, y_prognose)  # fpr=false positive rates, tpr=true positive rates
+roc_auc = auc(fpr, tpr)
+plt.figure()
+plt.plot(fpr, tpr, label='ROC-Kurve (Fläche = %0.2f)' % roc_auc)
+plt.plot([0, 1], [0, 1], 'k--', label='Keine Fähigkeit')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('Falsche Positive Rate')
+plt.ylabel('Wahre Positive Rate')
+plt.title('ROC-Kurve für Störungsklassifikation')
+plt.legend()
+plt.show()
+
+# Lernkurve zeichnen
+train_sizes, train_scores, test_scores = learning_curve(model, x_last, y_dependent, n_jobs=-1, train_sizes=np.linspace(.1, 1.0, 5), verbose=0)
+train_scores_mean = np.mean(train_scores, axis=1)
+test_scores_mean = np.mean(test_scores, axis=1)
+plt.figure()
+plt.plot(train_sizes, train_scores_mean, 'o-', color="r", label="Training-Score")
+plt.plot(train_sizes, test_scores_mean, 'o-', color="g", label="Cross-validation Score")
+plt.xlabel('Trainingsbeispiele')
+plt.ylabel('Score')
+plt.title('Lernkurve für Gradient Boosting Modell')
+plt.legend(loc="best")
+plt.show()
+
+
+# Liste der unabhängigen Variablen, ohne die 'Störung'-Spalte
+independent_vars = data.columns.drop('Störung')
+
+# Berechnung des Störung=1 Anteils für jede unabhängige Variable
+Störung_rates = {}
+for var in independent_vars:
+    rate = data.groupby(var)['Störung'].mean()  # Der Mittelwert der 'Störung'-Spalte entspricht dem Anteil von Störung=1
+    Störung_rates[var] = rate
+
+# Umwandlung der Anteile in ein DataFrame
+rates_df = pd.DataFrame(Störung_rates)
+
+# Auffüllen fehlender Werte mit null (falls zutreffend)
+rates_df.fillna(0, inplace=True)
+
+# Transponieren der Daten für bessere Visualisierung
+rates_df = rates_df.T
+
+# Zeichnen der Heatmap ohne Annotationen
+plt.figure(figsize=(12, 8))
+sns.heatmap(rates_df, annot=False, cmap='viridis')
+plt.title('Heatmap der Störungsraten nach unabhängigen Variablen')
+plt.ylabel('Variablen')
+plt.xlabel('Variable Werte')
+plt.xticks(rotation=45)
+plt.yticks(rotation=0)
+plt.show()
